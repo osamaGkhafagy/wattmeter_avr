@@ -29,8 +29,6 @@
 #define SAVE_PERIOD         1
 #define POWER_ROW           3
 #define DATE_TIME_ROW       4
-#define ACCU_PERIOD         1
-#define SAVE_PERIOD         1
 
 char* day_of_week[] = {"Saturday", "Sunday", "Monday", 
                       "Tuesday", "Wednesday", "Thursday", "Friday"};
@@ -42,8 +40,8 @@ void get_and_display_date_time();
 uint32_t get_time_stamp();
 void store_time_stamp(uint32_t t_stamp, uint16_t t_stamp_addr);
 uint32_t load_time_stamp(uint16_t t_stamp_addr);
-volatile uint16_t load_energy();
-void store_energy(volatile const uint16_t E_wh);
+volatile uint32_t load_energy();
+void store_energy(volatile const uint32_t E_wh);
 void calculate_power();
 void display_power();
 double filter_spurious(double value);
@@ -89,16 +87,16 @@ int main(void)
   alarm_on(100, 1);
   i2c_lcd_clear_row(3);
   i2c_lcd_clear_row(4);
-  /*
+  
   rtc time;
-  time.year = 22;
-  time.month = 8;
-  time.date = 19;
-  time.day = 19;
-  time.hour = 5;
-  time.min = 31;
+  time.year = 24;
+  time.month = 6;
+  time.date = 20;
+  time.day = 6;
+  time.hour = 11;
+  time.min = 37;
   ds1307_set_full_data(time);
-  */
+  
   /*
   uint16_t zero = 0;
   store_energy(zero);
@@ -212,39 +210,50 @@ uint32_t load_time_stamp(uint16_t t_stamp_addr)
     return t_stamp;
 }
 
-volatile uint16_t load_energy()
+volatile uint32_t load_energy()
 {
     uint8_t temp = 0;
-    volatile uint16_t E_wh = 0;
-    eeprom_read(&temp, E_WH_L_ADDR, 1);
-    E_wh = (temp & 0X00FF);
+    volatile uint32_t E_wh = 0;
+    // load byte #1
+    for(uint8_t i = 0; i < 4; i++)
+    {
+        eeprom_read(&temp, (E_WH_L_ADDR + i), 1);
+        E_wh = E_wh | (((uint32_t)temp << (8*i)) & (0X000000FF << (8*i)));
+    }
+    //eeprom_read(&temp, E_WH_L_ADDR, 1);
+    //E_wh = (temp & 0X00FF);
     // now the upper byte
-    eeprom_read(&temp, E_WH_H_ADDR, 1);
-    E_wh = E_wh | ((uint16_t)(temp << 8) & 0XFF00);
+    //eeprom_read(&temp, (E_WH_L_ADDR + 1), 1);
+    //E_wh = E_wh | ((uint32_t)(temp << 8) & 0XFF00);
     return E_wh;
 }
 
-void store_energy(volatile const uint16_t E_wh)
+void store_energy(volatile const uint32_t E_wh)
 {
     // splitting the 16-bit E_wh into two bytes to be stored
     // in (E_WH_ADDR) and (E_WH_ADDR + 1)
     // saving the lower byte
     uint8_t temp = 0;
-    // splitting big_int into two bytes, upper and lower
+    for(uint8_t i = 0; i < 4; i++)
+    {
+        temp = (uint8_t)((E_wh >> 8*i) & 0XFF);
+        eeprom_write(&temp, (E_WH_L_ADDR + i), 1);
+    }
+    // splitting big_int into four bytes
     // the lower byte first
-    temp = (uint8_t)(E_wh & 0X00FF);
-    eeprom_write(&temp, E_WH_L_ADDR, 1);
+    //temp = (uint8_t)(E_wh & 0X00FF);
+    //eeprom_write(&temp, E_WH_L_ADDR, 1);
     // now storing the upper byte
-    temp = (uint8_t)((E_wh >> 8) & 0X00FF);
-    eeprom_write(&temp, E_WH_H_ADDR, 1);
+    //temp = (uint8_t)((E_wh >> 8) & 0X00FF);
+    //eeprom_write(&temp, E_WH_H_ADDR, 1);
 }
 
 void calculate_power()
 {
     // initialize some needed auto variables
     double i_ac = 0, v_ac, p_ac, e_wh;
-    volatile uint16_t E_wh;
-    static uint16_t E_wh_curr = 0;
+    volatile uint32_t E_wh;
+    static uint32_t E_wh_curr = 0;
     volatile uint32_t current_t_stamp, accu_t_stamp, save_t_stamp;
     char p_str[5];
     // recall saved E_wh value in order to accumulate on
@@ -282,7 +291,7 @@ void calculate_power()
 void display_power()
 {
     // define some needed variables
-    uint16_t E_wh = 0;
+    uint32_t E_wh = 0;
     char vac_str[4], iac_str[5], e_wh_str[6];
     // reacall the current E_wh
     E_wh = load_energy();
